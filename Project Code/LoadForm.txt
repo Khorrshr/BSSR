@@ -1,0 +1,98 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace textQuest
+{
+    public partial class LoadForm : Form
+    {
+        public LoadForm()
+        {
+            InitializeComponent();
+        }
+
+        //********************Returns checked Radiobutton object
+        private RadioButton getCheckedRadio()
+        {
+
+            foreach (var control in this.Controls)
+            {
+                RadioButton radio = control as RadioButton;
+
+                if (radio != null && radio.Checked)
+                {
+                    return radio;
+                }
+            }
+            return null;
+        }
+        //********************
+
+
+
+        //********************Set of buttons to Load from Options
+        private void btn_load_Click(object sender, EventArgs e)
+        {
+            RadioButton checkedRB = getCheckedRadio();
+            var main = Application.OpenForms.OfType<MainForm>().Single();
+            int index = main.radioLoad.IndexOf(checkedRB);
+            //Whole if statement is OBSOLETE. Now it autochecks first RadioButton.
+            //But I'll leave it just in case some genius finds a way to uncheck RadioButton without checking a new one:)
+            if (index > -1) //that means not null, so some RadioButton is checked.
+            {
+                int pageToLoad = main.pagesSaved[index];
+                main.showGameInterface();
+                main.currentPage = pageToLoad;
+                main.pageUpdate();                
+                this.Close();
+            }
+        }
+
+        private void btn_cancel_Click(object sender, EventArgs e)
+        {
+            var main = Application.OpenForms.OfType<MainForm>().Single();
+            main.radioLoad = new List<RadioButton> { };
+            main.showGameInterface();
+            OptionsForm Options = new OptionsForm();
+            Options.ControlBox = false;
+            Options.Show();
+            this.Close();
+        }
+        //********************
+
+
+        
+        //********************Set of buttons to Load from Main Menu
+        private void btn_cancelfrommain_Click(object sender, EventArgs e)
+        {
+            var main = Application.OpenForms.OfType<MainForm>().Single();            
+            main.showMainMenu();            
+            this.Close();
+        }
+
+        private void btn_loadfrommain_Click(object sender, EventArgs e)
+        {
+            
+            RadioButton checkedRB = getCheckedRadio();
+            var main = Application.OpenForms.OfType<MainForm>().Single();            
+            main.showGameInterface();            
+
+            int index = main.radioLoad.IndexOf(checkedRB);
+            if (index > -1) //same. if is OBSOLETE
+            {
+                int pageToLoad = main.pagesSaved[index];
+                main.showGameInterface();
+                main.currentPage = pageToLoad;
+                main.pageUpdate();                
+                this.Close();
+            }
+        }
+        //********************
+    }
+}

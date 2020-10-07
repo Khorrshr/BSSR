@@ -1,0 +1,33 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace textQuest
+{
+    public partial class HelpForm : Form
+    {
+        public HelpForm()
+        {
+            InitializeComponent();
+            loadHelpText();
+        }
+
+        private void btn_back_Click(object sender, EventArgs e)
+        {
+            this.Close();
+        }
+
+        private void loadHelpText()
+        {
+            string fileName = "GameFiles/help.txt";
+            string helpText = System.IO.File.ReadAllText(@fileName);
+            txt_help.Text = helpText;
+        }
+    }
+}

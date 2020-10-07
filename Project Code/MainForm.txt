@@ -1,0 +1,676 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Text.RegularExpressions;
+
+//TODO (probably never):
+//1.deleting of saves from load menu
+//97.Better graphical assets: Backgrounds, Fonts, Icon
+//98 Maybe implement Resume last game (load last save) from main menu
+//99. Confirm dialog on exiting game/tomenu without save. Propose to save the game
+
+
+namespace textQuest
+{
+    public partial class MainForm : Form
+    {
+        public MainForm()
+        {
+            InitializeComponent();
+            intro();
+            ifSavesExistOnStart();
+        }
+
+
+        //********************Declaring and Setting variables
+        string relativePathToFiles = "GameFiles/";
+        string relativePathToSaves = "Saves/";
+        string gameFolder; //see setFilesFolder()
+        public string saveFolder;
+        public int currentPage = 339; //starting value. First page of the book
+
+        string buttonsFile = "buttons.list";
+        string textsFile = "texts.list";
+        string controlsFile = "buttonControls.list";
+
+        List<string> allButtonsNames;
+        List<string> allTexts;
+        List<string> allButtonsControls;
+        List<string> pageButtonsNames;
+        List<int> pageButtonControls;
+
+        public List<int> pagesSaved = new List<int> { };
+        public List<RadioButton> radioLoad = new List<RadioButton> { };
+        List<string> textPreviews = new List<string> { };
+        //********************
+
+
+
+        //********************Actual Game Engine:)
+        private void onStartGenerateFirstPage()
+        {
+            hideMainMenu();
+            showGameInterface();
+            pageUpdate();
+        }
+
+        public void pageUpdate()
+        {
+            hideButtons();
+            if (!IfVictoryAchieved())
+            {
+                updateButtonNamesAndControls();
+                int amountOfButtons = pageButtonsNames.Count;
+                for (int i = 1; i < amountOfButtons; i++)
+                {
+                    listOfButtons[i].Text = pageButtonsNames[i];
+                    listOfButtons[i].Visible = true;
+                }
+                txt_flavor.Text = allTexts[currentPage];
+            }
+            else
+            {
+                gameOver();
+            }
+        }
+        
+        private void btn_start_Click(object sender, EventArgs e) //start game button
+        {
+            startSequence();
+        }
+
+        public void startSequence()
+        {
+            setFilesFolder();
+            createGlobalLists();
+            testMode(0); //change between demo and actual product version 0/1
+            showOptionsButton();
+            updateButtonNamesAndControls();
+            onStartGenerateFirstPage();            
+        }
+        //********************
+
+
+
+        //********************Files parsing
+        private List<string> getAllTexts(string fileProvided) //old version of parsing when reading file line by line. OBSOLETE. Not used.
+        {
+            string fileName = gameFolder + fileProvided;
+            string[] tehLinesUnparsed = System.IO.File.ReadAllLines(@fileName);
+            var linesParsedList = new List<string> { "Line Zero" };
+            int counter = 0; //how much entries we have in total
+            foreach (string omgTheLine in tehLinesUnparsed)
+            {
+
+                try
+                {
+                    string[] splitter = omgTheLine.Split(')');
+                    int index = Int32.Parse(splitter[0]);
+                    string textsLine = splitter[1];
+                    linesParsedList.Insert(index, textsLine);
+                    counter++;
+                }
+                catch
+                {
+                    txt_log.Text += "\nException";
+                }
+            }
+            return linesParsedList;
+        }
+
+        private List<string> getAllTextsAlternative(string fileProvided) //returns list of chapters. separators are: /int*
+        {
+            string fileName = gameFolder + fileProvided;
+            string oneLine = System.IO.File.ReadAllText(@fileName);
+            var linesParsedList = new List<string> { "Line Zero" };
+            List<string> unparsedSplitter = oneLine.Split('/').ToList();
+            foreach (string line in unparsedSplitter)
+            {
+                try
+                {
+                    string[] splitter = line.Split('*');
+                    int index = Int32.Parse(splitter[0]);
+                    string textsLine = splitter[1];
+                    linesParsedList.Insert(index, textsLine);
+                }
+                catch
+                {
+                    txt_log.Text += "\nException";
+                }
+            }
+            return linesParsedList;
+        }
+
+        private List<string> parsePageButtons(int page) //returns strings array
+        {
+            string line = allButtonsNames[page];
+            List<string> splitter = line.Split(';').ToList();
+            splitter.Insert(0, "Line Zero");
+            return splitter;
+        }
+
+        private List<int> parsePageButtonControls(int page) //returns List of INTs
+        {
+            string line = allButtonsControls[page];
+            string[] splitter = line.Split(';');
+
+            var linesParsedList = new List<int> { 0 };
+            int elem;
+            foreach (string x in splitter)
+            {
+                elem = Int32.Parse(x);
+                linesParsedList.Add(elem);
+            }
+            return linesParsedList;
+        }
+        //********************
+
+
+
+        //********************Save and Load
+        public void saveCurrentGame() //it's here to not make allTexts public
+        {
+            string demoText = allTexts[currentPage].Substring(0, 40); //potential crash if string is shorter than 40 symbols. But who cares! 
+            //demoText = Regex.Replace(demoText, "\n", " "); // \n removal not needed anymore, since I have next line and it works for \n as well
+            demoText = Regex.Replace(demoText, @"\s+", " "); // replace many whitespaces with one
+            string currentDate = DateTime.Now.ToString("HH:mm:ss dd.MM.yyyy");
+            string fileName = saveFolder + "saved_games.list";
+            using (System.IO.StreamWriter file = new System.IO.StreamWriter(@fileName, true))
+            {
+                file.WriteLine(currentPage + ";" + currentDate + "  " + demoText);
+            }            
+        }
+
+        public void saveSuccessAnnounce()
+        {
+            lbl_gamesaved.Visible = true;
+            timer_saveSuccess.Enabled = true;
+        }
+
+        private void timer_saveSuccess_Tick(object sender, EventArgs e)
+        {
+            lbl_gamesaved.Visible = false;
+            timer_saveSuccess.Enabled = false;
+        }
+
+        public string[] getAllSaves() //returns unparsed array: every elem is one string from saveFile
+        {
+            var main = Application.OpenForms.OfType<MainForm>().Single();
+            string fileName = main.saveFolder + "saved_games.list";
+            string[] saveGamesArray = System.IO.File.ReadAllLines(@fileName);
+            return saveGamesArray;
+        }
+
+        private void btn_load_Click(object sender, EventArgs e) //load from main menu
+        {
+            startSequence();
+            hideGameInterface();
+            hideMainMenu();
+            loadSequence();
+            var load = Application.OpenForms.OfType<LoadForm>().Single();
+            load.btn_cancelfrommain.Visible = true;
+            load.btn_loadfrommain.Visible = true;
+        }
+
+        public void loadSequence()
+        {
+            LoadForm load = new LoadForm();
+            load.ControlBox = false;
+            load.Show();
+
+            string[] allSavesUnparsed = getAllSaves();
+            int ASUlength = allSavesUnparsed.Length;
+
+            foreach (string elem in allSavesUnparsed)
+            {
+                string[] splitter = elem.Split(';');
+                pagesSaved.Add(Convert.ToInt32(splitter[0]));
+                textPreviews.Add(splitter[1]);
+            }
+
+            int i;
+            int amountOfSaves = ASUlength;
+            for (i = 0; i < amountOfSaves; i++)
+            {
+                RadioButton rdo = new RadioButton();
+                rdo.Name = "RadioButton" + i;
+                rdo.Font = new Font("Papyrus", 14, FontStyle.Bold);
+                rdo.AutoSize = true;
+                rdo.Text = textPreviews[i];
+                //40,115 coords for first radioButton. +40,+0 for next
+                rdo.Location = new Point(40, 115 + i * 40);
+                load.Controls.Add(rdo);
+                radioLoad.Add(rdo); //it works!
+
+                Size newFormSize = new Size(700, 200 + i * 40);
+                load.Size = newFormSize;
+                if (i == 0)
+                {
+                    rdo.Checked = true;
+                }
+            }
+
+        }
+        
+        
+        private void ifSavesExist() //check if we have to disable load buttons if no saves created yet
+        {
+            string fileName = "Saves/saved_games.list";
+            string whatDoWeHaveHere = "";
+            try
+            {
+                whatDoWeHaveHere = System.IO.File.ReadAllText(@fileName);
+            }
+            catch { }
+
+            var main = Application.OpenForms.OfType<MainForm>().Single();
+            var options = Application.OpenForms.OfType<OptionsForm>().Single();
+
+
+            if (whatDoWeHaveHere.Length == 0)
+            {
+                try { main.btn_load.Enabled = false; }
+                catch { }
+                try { options.btn_load.Enabled = false; }
+                catch { }
+            }
+            else
+            {
+                try { main.btn_load.Enabled = true; }
+                catch { }
+                try { options.btn_load.Enabled = true; }
+                catch { }
+            }
+        }
+                
+        private void ifSavesExistOnStart() //tweaked version for Startup, when no variables available yet
+        {
+            string fileName = "Saves/saved_games.list";
+            string whatDoWeHaveHere = "";
+            try
+            {
+                whatDoWeHaveHere = System.IO.File.ReadAllText(@fileName);
+            }
+            catch { }
+
+            if (whatDoWeHaveHere.Length == 0)
+            {
+                try { btn_load.Enabled = false; }
+                catch { }
+            }
+            else
+            {
+                try { btn_load.Enabled = true; }
+                catch { }
+            }
+        }
+        //********************
+
+
+
+        //********************Intro, GameOver and Credits
+        private void intro()
+        {
+            hideMainMenu();
+            pic_intro.Image = textQuest.Properties.Resources.intro;
+            Size tehSize = new Size(666, 900);
+            pic_intro.Size = (tehSize);
+            pic_intro.SizeMode = PictureBoxSizeMode.StretchImage;
+            pic_intro.Enabled = true;
+            pic_intro.Visible = true;
+            timer_intro.Interval = 16000;
+            timer_intro.Enabled = true;
+        }
+        
+        private void timer_intro_Tick(object sender, EventArgs e) //intro length. Unskippable!
+        {
+            pic_intro.Enabled = false;
+            pic_intro.Visible = false;
+            timer_intro.Enabled = false;
+            showMainMenu();
+        }
+
+        private void outro()
+        {
+            Size tehSize = new Size(666, 900);
+            pic_intro.Size = (tehSize);
+            pic_intro.SizeMode = PictureBoxSizeMode.StretchImage;
+            pic_intro.Image = textQuest.Properties.Resources.victoryBackground;
+            pic_intro.Enabled = true;
+            pic_intro.Visible = true;
+        }
+
+        private void credits()
+        {
+            hideMainMenu();
+            pic_credits.Image = textQuest.Properties.Resources.credits;
+            Size tehSize = new Size(666, 900);
+            pic_credits.Size = (tehSize);
+            pic_credits.SizeMode = PictureBoxSizeMode.StretchImage;
+            pic_credits.Enabled = true;
+            pic_credits.Visible = true;
+            timer_credits.Interval = 34000;
+            timer_credits.Enabled = true;
+            btn_tomainmenu.Visible = true;
+            btn_tomainmenu.BringToFront();
+        }
+        
+        private void btn_credits_Click(object sender, EventArgs e) //main menu credits
+        {
+            credits();
+        }
+
+        private void timer_credits_Tick(object sender, EventArgs e)
+        {
+            pic_credits.Enabled = false;
+            pic_credits.Visible = false;
+            timer_credits.Enabled = false;
+            btn_tomainmenu.Visible = false;
+            showMainMenu();
+        }
+
+        private void gameOver()
+        {
+            hideGameInterface();
+            cheatsDisable();
+            outro();
+            //btn_tomainmenu.Location.Y = 769; turns out it doesnt work like that. have to use new "Point"
+            btn_tomainmenu.Location = new Point(235, 730);
+            btn_tomainmenu.Visible = true;
+        }
+
+        private bool IfVictoryAchieved()
+        {
+            return currentPage == 391;
+        }
+        //********************
+        
+
+
+        //********************GUI
+        private void hideButtons()
+        {
+            btn_button1.Visible = false;
+            btn_button2.Visible = false;
+            btn_button3.Visible = false;
+            btn_button4.Visible = false;
+            btn_button5.Visible = false;
+            btn_button6.Visible = false;
+        }
+
+        public void hideMainMenu()
+        {
+            btn_start.Visible = false;
+            btn_load.Visible = false;
+            btn_credits.Visible = false;
+            btn_exit.Visible = false;
+            btn_help.Visible = false;
+        }
+
+        public void showMainMenu()
+        {
+            btn_start.Visible = true;
+            btn_load.Visible = true;
+            btn_credits.Visible = true;
+            btn_exit.Visible = true;
+            btn_help.Visible = true;
+        }
+
+        public void hideGameInterface()
+        {
+            hideButtons();            
+            txt_flavor.Visible = false;
+            btn_options.Visible = false;
+        }
+
+        public void showGameInterface()
+        {
+            txt_flavor.Visible = true;
+            btn_options.Visible = true;
+        }
+
+        public void showOptionsButton()
+        {
+            btn_options.Visible = true;
+        }
+
+        private void hideOptionsButton()
+        {
+            btn_options.Visible = false;
+        }
+        //********************
+
+
+
+        //********************Cheat codes        
+        private void keyIsPressed(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter && txt_cheat.Text != "")
+            {
+                try
+                {
+                    int cheatPage = Convert.ToInt32(txt_cheat.Text);
+                    if (cheatPage > 0 && cheatPage < 392)
+                    {
+                        currentPage = cheatPage;
+                        pageUpdate();
+                    }
+                }
+                catch
+                {
+
+                }
+            }
+        }
+
+        public void cheatsEnable()
+        {
+            var options = Application.OpenForms.OfType<OptionsForm>().Single();
+            txt_cheat.Visible = true;
+            options.btn_cheat.Text = "Cheats: ON";
+        }
+
+        public void cheatsDisable()
+        {
+            txt_cheat.Visible = false;
+            try
+            {
+                var options = Application.OpenForms.OfType<OptionsForm>().Single();
+                options.btn_cheat.Text = "Cheats: OFF";
+            }
+
+            catch { }
+        }
+        //********************
+
+
+
+        //********************Options, Help, Exit, Back to Menu
+        private void btn_help_Click(object sender, EventArgs e)
+        {
+            HelpForm help = new HelpForm();
+            help.Show();
+        }
+        
+        private void btn_exit_Click(object sender, EventArgs e) //exit from main menu
+        {
+            Application.Exit();
+        }
+
+        private void btn_tomainmenu_Click(object sender, EventArgs e)
+        {
+            btn_tomainmenu.Visible = false;
+            pic_intro.Enabled = false;
+            pic_intro.Visible = false;
+            pic_credits.Enabled = false;
+            pic_credits.Visible = false;
+            timer_credits.Enabled = false;
+            currentPage = 339;
+            btn_tomainmenu.Location = new Point(220, 683);
+            ifSavesExistOnStart();
+            showMainMenu();
+        }
+        
+        private void btn_menu_Click(object sender, EventArgs e) //options
+        {
+            OptionsForm Options = new OptionsForm();
+            Options.ControlBox = false;
+            Options.Show();
+            ifSavesExist();
+            hideOptionsButton();
+            if (txt_cheat.Visible == true)
+            {
+                Options.btn_cheat.Text = "Cheats: ON";
+            }
+            else
+            {
+                Options.btn_cheat.Text = "Cheats: OFF";
+            }
+        }
+        //********************
+
+
+
+        //********************InGame Button clicks
+        private void btn_button1_Click(object sender, EventArgs e)
+        {
+            goToIndex(1);
+            pageUpdate();
+        }
+
+        private void btn_button2_Click(object sender, EventArgs e)
+        {
+            goToIndex(2);
+            pageUpdate();
+        }
+
+        private void btn_button3_Click(object sender, EventArgs e)
+        {
+            goToIndex(3);
+            pageUpdate();
+        }
+
+        private void btn_button4_Click(object sender, EventArgs e)
+        {
+            goToIndex(4);
+            pageUpdate();
+        }
+
+        private void btn_button5_Click(object sender, EventArgs e)
+        {
+            goToIndex(5);
+            pageUpdate();
+        }
+
+        private void btn_button6_Click(object sender, EventArgs e)
+        {
+            goToIndex(6);
+            pageUpdate();
+        }
+        //********************
+
+
+
+        //********************Different helper functions, wrappers and other unsorted stuff
+        private void logOutput()  //not used in actual game
+        {
+            txt_log.Text += "\n\n";
+            txt_log.Text += "listOfButtons - Buttons objects (LIST) \nLength : " + listOfButtons.Count + "\n";
+            txt_log.Text += "\n";
+            txt_log.Text += "allButtonsNames (LIST):\n";
+            txt_log.Text += "Length of allButtonsNames: " + allButtonsNames.Count + "\n";
+            foreach (string x in allButtonsNames)
+            {
+                txt_log.Text += x + "\n";
+            }
+            txt_log.Text += "\n";
+            txt_log.Text += "allTexts (LIST):\n";
+            txt_log.Text += "Length of allTexts: " + allTexts.Count + "\n";
+            foreach (string x in allTexts)
+            {
+                txt_log.Text += x + "\n";
+            }
+            txt_log.Text += "\n";
+            txt_log.Text += "allButtonControls (LIST):\n";
+            txt_log.Text += "Length of allButtonsControls: " + allButtonsControls.Count + "\n";
+            foreach (string x in allButtonsControls)
+            {
+                txt_log.Text += x + "\n";
+            }
+            txt_log.Text += allButtonsControls.GetType();
+            txt_log.Text += "\n";
+            txt_log.Text += "\ncurrentPage (" + currentPage + ") pageButtonControls (LIST):\n";
+            txt_log.Text += "Length of pageButtonControls: " + pageButtonControls.Count + "\n";
+            foreach (int x in pageButtonControls)
+            {
+                txt_log.Text += x + "\n";
+            }
+            txt_log.Text += pageButtonControls.GetType() + "\n";
+            txt_log.Text += "\n";
+            txt_log.Text += "(Page " + currentPage + ") pageButtonsNames (LIST) :\n";
+            txt_log.Text += "Length of pageButtonsNames: " + pageButtonsNames.Count + "\n";
+            foreach (string x in pageButtonsNames)
+            {
+                txt_log.Text += x + "\n";
+            }
+        }
+
+
+        List<Button> listOfButtons = new List<Button>();
+        private void createButtonsList()
+        {
+            listOfButtons.Add(btn_start);
+            listOfButtons.Add(btn_button1);
+            listOfButtons.Add(btn_button2);
+            listOfButtons.Add(btn_button3);
+            listOfButtons.Add(btn_button4);
+            listOfButtons.Add(btn_button5);
+            listOfButtons.Add(btn_button6);
+        }
+
+
+        private void testMode(int x) //not sure if testMode = 1 works anymore with all those implemented changes. Whatever..
+        {
+            if (x == 0) { txt_log.Visible = false; }
+            if (x == 1)
+            {
+                txt_log.Visible = true;
+                allButtonsNames = getAllTextsAlternative("test_buttons.list"); //All unparsed buttons names in list
+                allTexts = getAllTextsAlternative("test_texts.list"); //All flavor texts in list
+                allButtonsControls = getAllTextsAlternative("test_buttonControls.list"); //All button links in the list
+            }
+        }
+
+        private void goToIndex(int x)
+        {
+            currentPage = pageButtonControls[x];
+        }
+
+        private void updateButtonNamesAndControls()
+        {
+            pageButtonControls = parsePageButtonControls(currentPage); //list of INTs used to link to other pages
+            pageButtonsNames = parsePageButtons(currentPage); //array of buttons on particular page
+        }
+
+        private void createGlobalLists()
+        {
+            createButtonsList();
+            allButtonsNames = getAllTextsAlternative(buttonsFile); //All unparsed buttons names in list
+            allTexts = getAllTextsAlternative(textsFile); //All flavor texts in list
+            allButtonsControls = getAllTextsAlternative(controlsFile); //All button links in the list
+        }
+
+        private void setFilesFolder()
+        {
+            gameFolder = relativePathToFiles;
+            saveFolder = relativePathToSaves;
+        }
+        //********************
+    }
+}
